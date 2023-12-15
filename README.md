@@ -12,13 +12,11 @@ rustflags = ["-C", "link-arg=-fuse-ld=/usr/bin/mold"]
 
 ## Development loop
 
-Install `cargo-watch` and run this command:
+Install `bacon` and run this command:
 
 ```bash
-cargo watch -x check -x test -x run
+bacon
 ```
-
-[TODO]: use bacon instead
 
 ## Code coverage
 
@@ -27,3 +25,19 @@ Install `cargo-tarpaulin` and run this command:
 ```bash
 cargo tarpaulin --ignore-tests
 ```
+
+## Better testing
+
+Install `cargo-nextest` and run this command:
+
+```bash
+cargo nextest run
+```
+
+For continuous development testing, run:
+
+```bash
+bacon test
+```
+
+Or [run `bacon`](#development-loop) and press `T`.
