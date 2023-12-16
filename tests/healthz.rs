@@ -1,14 +1,34 @@
+use once_cell::sync::Lazy;
+use secrecy::ExposeSecret;
 use std::net::TcpListener;
 
-use sqlx::{PgConnection, Connection, Executor, PgPool};
-use zero2prod::configuration::{DatabaseSettings, Settings};
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use zero2prod::{
+    configuration::{DatabaseSettings, Settings},
+    telemetry::{get_subscriber, init_subscriber},
+};
 
 struct TestApp {
     connection_string: String,
-    database: PgPool
+    database: PgPool,
 }
 
+static TRACING: Lazy<()> = Lazy::new(|| {
+    let name = "test".to_string();
+    let level = "debug".to_string();
+
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(name, level, std::io::stdout);
+        init_subscriber(subscriber);
+    } else {
+        let subscriber = get_subscriber(name, level, std::io::sink);
+        init_subscriber(subscriber);
+    };
+});
+
 async fn spawn_app() -> TestApp {
+    Lazy::force(&TRACING);
+
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to a random port");
     let port = listener.local_addr().unwrap().port();
 
@@ -18,19 +38,18 @@ async fn spawn_app() -> TestApp {
 
     let server = zero2prod::run(listener, connection_pool.clone()).expect("Could not bind address");
     tokio::spawn(server);
-    
+
     TestApp {
         connection_string: format!("http://127.0.0.1:{}", port),
-        database: connection_pool
+        database: connection_pool,
     }
 }
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // Create database
-    let mut connection =
-        PgConnection::connect(&config.connection_string_no_db())
-            .await
-            .expect("Failed to connect to Postgres");
+    let mut connection = PgConnection::connect(&config.connection_string_no_db().expose_secret())
+        .await
+        .expect("Failed to connect to Postgres");
 
     connection
         .execute(&*format!(r#"CREATE DATABASE "{}";"#, config.database_name))
@@ -38,7 +57,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to create database.");
 
     // Migrate database
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
         .await
         .expect("Failed to connect to Postgres.");
 
@@ -72,7 +91,10 @@ async fn test() {
 #[tokio::test]
 async fn subscription_returns_200_on_correct_body() {
     // GIVEN
-    let TestApp { connection_string, database } = spawn_app().await;
+    let TestApp {
+        connection_string,
+        database,
+    } = spawn_app().await;
     let client = reqwest::Client::new();
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
 
@@ -99,7 +121,9 @@ async fn subscription_returns_200_on_correct_body() {
 #[tokio::test]
 async fn subscription_returns_400_on_malformed_body() {
     // GIVEN
-    let TestApp { connection_string, .. } = spawn_app().await;
+    let TestApp {
+        connection_string, ..
+    } = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = [
         ("name=lupin", "no email"),
