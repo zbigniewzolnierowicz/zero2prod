@@ -1,24 +1,18 @@
-use actix_web::{dev::Server, web, App, HttpResponse, HttpServer};
+use actix_web::{dev::Server, web, App, HttpServer};
+use sqlx::PgPool;
 
-async fn ping() -> HttpResponse {
-    HttpResponse::Ok().finish()
-}
 
-#[derive(serde::Deserialize)]
-struct SubscribeFormBody {
-    name: String,
-    email: String,
-}
+pub mod configuration;
+mod startup;
+mod routes;
 
-async fn subscribe(body: web::Form<SubscribeFormBody>) -> HttpResponse {
-    HttpResponse::Ok().body(format!("Hello, {} <{}>!", body.name, body.email))
-}
-
-pub fn run(listener: std::net::TcpListener) -> Result<Server, std::io::Error> {
-    let server = HttpServer::new(|| {
+pub fn run(listener: std::net::TcpListener, database: PgPool) -> Result<Server, std::io::Error> {
+    let database = web::Data::new(database);
+    let server = HttpServer::new(move || {
         App::new()
-            .route("/healthz", web::get().to(ping))
-            .route("/subscribe", web::post().to(subscribe))
+            .route("/healthz", web::get().to(routes::ping))
+            .route("/subscribe", web::post().to(routes::subscribe))
+            .app_data(database.clone())
     })
     .listen(listener)?
     .run();
@@ -26,16 +20,3 @@ pub fn run(listener: std::net::TcpListener) -> Result<Server, std::io::Error> {
     Ok(server)
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::ping;
-
-    #[tokio::test]
-    async fn ping_works() {
-        // GIVEN, WHEN
-        let result = ping().await;
-
-        // THEN
-        assert!(result.status().is_success());
-    }
-}
