@@ -3,8 +3,8 @@ use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
 
 pub mod configuration;
-pub mod startup;
 pub mod routes;
+pub mod startup;
 pub mod telemetry;
 
 pub fn run(listener: std::net::TcpListener, database: PgPool) -> Result<Server, std::io::Error> {
@@ -21,4 +21,3 @@ pub fn run(listener: std::net::TcpListener, database: PgPool) -> Result<Server, 
 
     Ok(server)
 }
-

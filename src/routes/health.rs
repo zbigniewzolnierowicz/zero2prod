@@ -17,4 +17,3 @@ mod tests {
         assert!(result.status().is_success());
     }
 }
-

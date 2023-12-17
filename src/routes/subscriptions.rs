@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse};
+use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::Utc;
 
 #[derive(serde::Deserialize)]
 pub struct SubscribeFormBody {
@@ -19,9 +19,7 @@ pub struct SubscribeFormBody {
 )]
 pub async fn subscribe(body: web::Form<SubscribeFormBody>, db: web::Data<PgPool>) -> HttpResponse {
     match insert_subscriber(&db, &body).await {
-        Ok(_) => { 
-            HttpResponse::Ok().finish()
-        },
+        Ok(_) => HttpResponse::Ok().finish(),
         Err(e) => {
             tracing::error!("Failed to add new subscriber: {:?}", e);
             HttpResponse::InternalServerError().finish()
@@ -29,10 +27,7 @@ pub async fn subscribe(body: web::Form<SubscribeFormBody>, db: web::Data<PgPool>
     }
 }
 
-#[tracing::instrument(
-    name = "Persisting subscriber to database",
-    skip(db, body),
-)]
+#[tracing::instrument(name = "Persisting subscriber to database", skip(db, body))]
 pub async fn insert_subscriber(db: &PgPool, body: &SubscribeFormBody) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "INSERT INTO subscriptions (id, email, name, subscribed_at) VALUES ($1, $2, $3, $4) RETURNING id",
