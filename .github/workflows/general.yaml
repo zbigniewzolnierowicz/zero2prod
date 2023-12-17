@@ -1,13 +1,15 @@
-# The name of your workflow. GitHub displays the names of your workflows on your repository's "Actions" tab
 name: Rust
 
-# To automatically trigger the workflow
-on: [push, pull_request]
-
+on:
+  [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
   SQLX_VERSION: 0.7.1
   SQLX_FEATURES: "rustls,postgres"
+  POSTGRES_HOST: "localhost"
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: password
+  POSTGRES_DB: postgres
 jobs:
   test:
     name: Test
@@ -24,11 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@nextest
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client mold clang -y
       - uses: Swatinem/rust-cache@v2
         with:
           key: sqlx-${{ env.SQLX_VERSION }}
-
       - name: Install sqlx-cli
         run:
             cargo install sqlx-cli
@@ -36,18 +40,14 @@ jobs:
             --features ${{ env.SQLX_FEATURES }}
             --no-default-features
             --locked
-
-      - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install postgresql-client -y
-
       - name: Migrate database
-        run: SKIP_DOCKER=true ./scripts/init_db.sh
-
-      - name: Check for valid sqlx offline data
+        run: |
+          sudo apt-get install libpq-dev -y
+          SKIP_DOCKER=true ./scripts/init_db.sh
+      - name: Check sqlx-data.json is up-to-date
         run: cargo sqlx prepare --workspace --check
-
       - name: Run tests
-        run: cargo nextest run
+        run: cargo test
 
   fmt:
     name: Rustfmt
@@ -77,6 +77,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client mold clang -y
       - uses: Swatinem/rust-cache@v2
         with:
           key: sqlx-${{ env.SQLX_VERSION }}
@@ -87,14 +91,11 @@ jobs:
             --features ${{ env.SQLX_FEATURES }}
             --no-default-features
             --locked
-      - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install postgresql-client -y
       - name: Migrate database
         run: SKIP_DOCKER=true ./scripts/init_db.sh
       - name: Linting
         run: cargo clippy -- -D warnings
 
-  # `coverage` container job
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
@@ -111,11 +112,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install postgresql-client -y
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client mold clang -y
       - uses: Swatinem/rust-cache@v2
         with:
           key: sqlx-${{ env.SQLX_VERSION }}
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
       - name: Install sqlx-cli
         run:
           cargo install sqlx-cli
@@ -126,4 +131,4 @@ jobs:
       - name: Migrate database
         run: SKIP_DOCKER=true ./scripts/init_db.sh
       - name: Generate code coverage
-        run: cargo install cargo-tarpaulin && cargo tarpaulin --verbose --workspace
+        run: cargo tarpaulin --verbose --workspace
