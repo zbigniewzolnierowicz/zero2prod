@@ -54,7 +54,7 @@ impl Settings {
             .try_into()
             .expect("Failed to parse environment");
 
-        let env_config = format!("{}.yaml", environment.to_string());
+        let env_config = format!("{}.yaml", environment);
 
         let settings = config::Config::builder()
             .add_source(config::File::from(config_path.join("base.yaml")))
