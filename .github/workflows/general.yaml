@@ -3,6 +3,7 @@ name: Rust
 on:
   [push, pull_request]
 env:
+  APP_NAME: zero2prod
   CARGO_TERM_COLOR: always
   SQLX_VERSION: 0.7.1
   SQLX_FEATURES: "rustls,postgres"
@@ -10,6 +11,8 @@ env:
   POSTGRES_USER: postgres
   POSTGRES_PASSWORD: password
   POSTGRES_DB: postgres
+  POSTGRES_PORT: 5432
+  REGISTRY: ghcr.io
 jobs:
   test:
     name: Test
@@ -18,9 +21,9 @@ jobs:
       postgres:
         image: postgres:14
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: postgres
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
         ports:
           - 5432:5432
     steps:
@@ -131,7 +134,8 @@ jobs:
       - name: Migrate database
         run: SKIP_DOCKER=true ./scripts/init_db.sh
       - name: Generate code coverage
-        run: cargo tarpaulin --verbose --workspace
+        run: cargo tarpaulin --ignore-tests --verbose --workspace
+
   upload:
     name: Build and publish
     runs-on: ubuntu-latest
@@ -152,7 +156,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.APP_NAME }}
       - name: Build and push Docker image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
