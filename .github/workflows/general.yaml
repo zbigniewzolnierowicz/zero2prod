@@ -1,7 +1,11 @@
 name: Rust
 
 on:
-  [push, pull_request]
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
 env:
   IMAGE_NAME: ${{ format('{0}/{1}', github.repository_owner, 'zero2prod') }}
   CARGO_TERM_COLOR: always
@@ -162,6 +166,12 @@ jobs:
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
       - name: Build and push Docker image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
