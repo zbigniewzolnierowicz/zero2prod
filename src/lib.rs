@@ -6,6 +6,7 @@ pub mod configuration;
 pub mod routes;
 pub mod startup;
 pub mod telemetry;
+pub mod domain;
 
 pub fn run(listener: std::net::TcpListener, database: PgPool) -> Result<Server, std::io::Error> {
     let database = web::Data::new(database);
