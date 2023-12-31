@@ -18,7 +18,6 @@ pub struct SubscribeFormBody {
         subscriber_name = %body.name,
     ),
 )]
-
 pub async fn subscribe(body: web::Form<SubscribeFormBody>, db: web::Data<PgPool>) -> HttpResponse {
     let new_subscriber: NewSubscriber = match body.0.try_into() {
         Ok(sub) => sub,

@@ -1,5 +1,5 @@
-use crate::domain::SubscriberName;
 use crate::domain::SubscriberEmail;
+use crate::domain::SubscriberName;
 use crate::routes::SubscribeFormBody;
 
 pub struct NewSubscriber {

@@ -135,7 +135,7 @@ async fn subscription_returns_400_on_malformed_body() {
         ("name=&email=", "empty name and email"),
         ("name=Lupin&email=invalidemail.com", "no @ sign in email"),
         ("name=Lupin&email=thing@", "no domain in email"),
-        ("name=Lupin&email=@domain.com", "no user in email")
+        ("name=Lupin&email=@domain.com", "no user in email"),
     ];
 
     for (body, message) in test_cases {
