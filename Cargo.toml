@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = { version = "4", features = ["rustls"] }
-chrono = { version = "0.4.31", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.31", default-features = false, features = ["clock", "serde"] }
 claims = "0.7.1"
 config = "0.13.4"
 fake = "~2.3"
@@ -16,6 +16,7 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-feature
 secrecy = { version = "0.8.0", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde-aux = "4.3.1"
+serde_json = "1.0.109"
 strum = { version = "0.25.0", features = ["derive", "strum_macros"] }
 strum_macros = "0.25.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -26,7 +27,7 @@ tracing-error = "0.2.0"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["registry", "env-filter"] }
 unicode-segmentation = "1.10.1"
-uuid = { version = "1.6.1", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4", "serde"] }
 validator = "0.16.1"
 
 [dependencies.sqlx]
@@ -47,3 +48,6 @@ path = "src/lib.rs"
 [[bin]]
 path = "src/main.rs"
 name = "zero2prod"
+
+[dev-dependencies]
+wiremock = "0.5.22"

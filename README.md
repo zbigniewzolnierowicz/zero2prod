@@ -41,3 +41,7 @@ bacon test
 ```
 
 Or [run `bacon`](#development-loop) and press `T`.
+
+## Environment variables to set
+
+Get an API key from Postmark and set `APP_APPLICATION__EMAIL=<api key>`

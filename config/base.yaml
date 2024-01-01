@@ -7,3 +7,8 @@ database:
   username: "postgres"
   password: "password"
   database_name: "newsletter"
+email:
+  base_url: localhost
+  sender_email: zero2prod-test@zed.gay
+  token: "very-secret-token"
+  timeout_miliseconds: 10000
