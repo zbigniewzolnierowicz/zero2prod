@@ -1,3 +1,4 @@
+use crate::configuration::ApplicationBaseUrl;
 use crate::email_client::EmailClient;
 use actix_web::{dev::Server, web, App, HttpServer};
 use sqlx::PgPool;
@@ -14,16 +15,20 @@ pub fn run(
     listener: std::net::TcpListener,
     database: PgPool,
     email_client: EmailClient,
+    base_url: ApplicationBaseUrl,
 ) -> Result<Server, std::io::Error> {
     let database = web::Data::new(database);
     let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(base_url);
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
             .route("/healthz", web::get().to(routes::ping))
             .route("/subscribe", web::post().to(routes::subscribe))
+            .route("/subscribe/confirm", web::get().to(routes::confirm))
             .app_data(database.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(listener)?
     .run();

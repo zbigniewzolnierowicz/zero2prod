@@ -1,4 +1,5 @@
 use secrecy::{ExposeSecret, Secret};
+use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
@@ -27,21 +28,25 @@ impl TryFrom<String> for Environment {
     }
 }
 
-#[derive(serde::Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub email: EmailClientSettings,
 }
 
-#[derive(serde::Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
+pub struct ApplicationBaseUrl(pub String);
+
+#[derive(Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
+    pub base_url: ApplicationBaseUrl,
 }
 
-#[derive(serde::Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: Secret<String>,
@@ -53,7 +58,7 @@ pub struct DatabaseSettings {
     pub require_ssl: bool,
 }
 
-#[derive(serde::Deserialize, Clone )]
+#[derive(Deserialize, Clone)]
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
