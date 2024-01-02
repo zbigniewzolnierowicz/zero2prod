@@ -30,12 +30,15 @@ impl Application {
 
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
+        let mut templates = tera::Tera::new("templates/**/*").expect("Could not load templates");
+        templates.autoescape_on(vec![]);
 
         let server = run(
             listener,
             connection_pool,
             email_client,
             config.application.base_url,
+            templates,
         )?;
 
         Ok(Self { port, server })

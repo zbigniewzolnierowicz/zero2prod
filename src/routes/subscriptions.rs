@@ -5,8 +5,9 @@ use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Executor, PgPool, Postgres, Row, Transaction};
+use tera::{Context, Tera};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -17,7 +18,7 @@ pub struct SubscribeFormBody {
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(body, db, email, base_url),
+    skip(body, db, email, base_url, template),
     fields(
         subscriber_email = %body.email,
         subscriber_name = %body.name,
@@ -28,6 +29,7 @@ pub async fn subscribe(
     db: web::Data<PgPool>,
     email: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
+    template: web::Data<Tera>,
 ) -> HttpResponse {
     let new_subscriber: NewSubscriber = match body.0.try_into() {
         Ok(sub) => sub,
@@ -52,9 +54,15 @@ pub async fn subscribe(
         Err(_) => return HttpResponse::InternalServerError().finish(),
     };
 
-    if send_confirmation_email(&email, &new_subscriber, &base_url.0, &subscription_token)
-        .await
-        .is_err()
+    if send_confirmation_email(
+        &email,
+        &template,
+        &new_subscriber,
+        &base_url.0,
+        &subscription_token,
+    )
+    .await
+    .is_err()
     {
         return HttpResponse::InternalServerError().finish();
     };
@@ -146,27 +154,42 @@ pub async fn insert_subscriber(
     Ok(new_subscriber_id)
 }
 
+#[derive(Serialize)]
+struct ConfirmationEmailContext<'a> {
+    name: &'a str,
+    link: String,
+}
+
 #[tracing::instrument(
     name = "Sending a confirmation email to user",
-    skip(email, new_subscriber, base_url)
+    skip(email, new_subscriber, base_url, template)
 )]
 pub async fn send_confirmation_email(
     email: &EmailClient,
+    template: &Tera,
     new_subscriber: &NewSubscriber,
     base_url: &str,
     token: &str,
 ) -> Result<(), reqwest::Error> {
     let confirmation_link = format!("{base_url}/subscribe/confirm?token={token}");
 
-    let html_body = format!(
-        "Welcome to the newsletter!<br />\
-                Click <a href=\"{}\">here</a> to confirm your subscription.",
-        confirmation_link
-    );
-    let text_body = format!(
-        "Welcome to the newsletter!\nVisit {} to confirm your subscription.",
-        confirmation_link
-    );
+    let context = ConfirmationEmailContext {
+        name: new_subscriber.name.as_ref(),
+        link: confirmation_link,
+    };
+
+    let html_body = template
+        .render(
+            "confirm-email.html",
+            &Context::from_serialize(&context).unwrap(),
+        )
+        .unwrap();
+    let text_body = template
+        .render(
+            "confirm-email.txt",
+            &Context::from_serialize(&context).unwrap(),
+        )
+        .unwrap();
 
     email
         .send_email(

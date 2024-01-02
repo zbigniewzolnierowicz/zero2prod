@@ -1,0 +1,1 @@
+Welcome to the newsletter, {{ name }}!\nVisit {{ link }} to confirm your subscription.
