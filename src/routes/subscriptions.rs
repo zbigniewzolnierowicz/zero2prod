@@ -1,14 +1,16 @@
 use crate::configuration::ApplicationBaseUrl;
 use crate::domain::{Email, SubscriberStatus};
+use crate::utils::error_chain_fmt;
 use crate::{domain::NewSubscriber, email_client::EmailClient};
 use actix_web::{web, HttpResponse, ResponseError};
+use anyhow::Context;
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use sqlx::{Executor, PgPool, Postgres, Row, Transaction};
-use tera::{Context, Tera};
+use tera::{Context as TeraContext, Tera};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -33,15 +35,22 @@ pub async fn subscribe(
     template: web::Data<Tera>,
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber: NewSubscriber = body.0.try_into()?;
-    let mut tx = db.begin().await.map_err(SubscribeError::PoolError)?;
+    let mut tx = db
+        .begin()
+        .await
+        .context("Failed to get a connection from Postgres pool")?;
+
     let subscriber_id = insert_subscriber(&mut tx, &new_subscriber)
         .await
-        .map_err(SubscribeError::InsertSubscriberError)?;
-    let subscription_token = store_token(&mut tx, &subscriber_id).await?;
+        .context("Failed to insert new subscriber".to_string())?;
+
+    let subscription_token = store_token(&mut tx, &subscriber_id)
+        .await
+        .context("Failed to store confirmation token")?;
 
     tx.commit()
         .await
-        .map_err(SubscribeError::TransactionCommitError)?;
+        .context("Failed to commit SQL transaction")?;
 
     send_confirmation_email(
         &email,
@@ -50,7 +59,8 @@ pub async fn subscribe(
         &base_url.0,
         &subscription_token,
     )
-    .await?;
+    .await
+    .context("Failed to send confirmation email")?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -80,10 +90,7 @@ pub async fn store_token(
         subscriber_id
     );
 
-    tx.execute(query).await.map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        StoreTokenError(e)
-    })?;
+    tx.execute(query).await.map_err(StoreTokenError)?;
 
     Ok(token)
 }
@@ -130,10 +137,7 @@ pub async fn insert_subscriber(
         SubscriberStatus::PendingConfirmation.to_string()
     );
 
-    tx.execute(query).await.map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    })?;
+    tx.execute(query).await?;
 
     Ok(new_subscriber_id)
 }
@@ -154,7 +158,7 @@ pub async fn send_confirmation_email(
     new_subscriber: &NewSubscriber,
     base_url: &str,
     token: &str,
-) -> Result<(), reqwest::Error> {
+) -> Result<(), SendMailError> {
     let confirmation_link = format!("{base_url}/subscribe/confirm?token={token}");
 
     let context = ConfirmationEmailContext {
@@ -162,18 +166,14 @@ pub async fn send_confirmation_email(
         link: confirmation_link,
     };
 
-    let html_body = template
-        .render(
-            "confirm-email.html",
-            &Context::from_serialize(&context).unwrap(),
-        )
-        .unwrap();
-    let text_body = template
-        .render(
-            "confirm-email.txt",
-            &Context::from_serialize(&context).unwrap(),
-        )
-        .unwrap();
+    let html_body = template.render(
+        "confirm-email.html",
+        &TeraContext::from_serialize(&context).unwrap(),
+    )?;
+    let text_body = template.render(
+        "confirm-email.txt",
+        &TeraContext::from_serialize(&context).unwrap(),
+    )?;
 
     email
         .send_email(
@@ -182,19 +182,8 @@ pub async fn send_confirmation_email(
             &html_body,
             &text_body,
         )
-        .await
-}
+        .await?;
 
-fn error_chain_fmt(
-    e: &impl std::error::Error,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-    writeln!(f, "{}\n", e)?;
-    let mut current = e.source();
-    while let Some(cause) = current {
-        writeln!(f, "Caused by:\n\t{}", cause)?;
-        current = cause.source();
-    }
     Ok(())
 }
 
@@ -223,24 +212,27 @@ impl std::error::Error for StoreTokenError {
 }
 
 #[derive(thiserror::Error)]
+pub enum SendMailError {
+    #[error(transparent)]
+    TemplateRenderError(#[from] tera::Error),
+
+    #[error(transparent)]
+    HTTPClientError(#[from] reqwest::Error),
+}
+
+impl std::fmt::Debug for SendMailError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+#[derive(thiserror::Error)]
 pub enum SubscribeError {
     #[error("{0}")]
     ValidationError(String),
 
-    #[error("Failed to store confirmation token for new subscriber.")]
-    StoreTokenError(#[from] StoreTokenError),
-
-    #[error("Failed to send confirmation email")]
-    SendEmailError(#[from] reqwest::Error),
-
-    #[error("Failed to acquire Postgres connection from pool")]
-    PoolError(#[source] sqlx::Error),
-
-    #[error("Failed to insert new subscriber in database")]
-    InsertSubscriberError(#[source] sqlx::Error),
-
-    #[error("Failed to commit SQL transaction to store a new subscriber")]
-    TransactionCommitError(#[source] sqlx::Error),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl std::fmt::Debug for SubscribeError {

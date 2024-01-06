@@ -1,5 +1,7 @@
-use crate::domain::SubscriberStatus;
-use actix_web::{web, HttpResponse};
+use crate::{domain::SubscriberStatus, utils::error_chain_fmt};
+use actix_web::{web, HttpResponse, ResponseError};
+use anyhow::Context;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -10,26 +12,29 @@ pub struct ConfirmParameters {
 }
 
 #[tracing::instrument(name = "Confirm a pending subscriber", skip(db, params))]
-pub async fn confirm(db: web::Data<PgPool>, params: web::Query<ConfirmParameters>) -> HttpResponse {
-    let subscriber_id = match get_subscriber_id_from_token(&db, &params.token).await {
-        Ok(id) => id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+pub async fn confirm(
+    db: web::Data<PgPool>,
+    params: web::Query<ConfirmParameters>,
+) -> Result<HttpResponse, ConfirmSubscriptionError> {
+    let subscriber_id = get_subscriber_id_from_token(&db, &params.token)
+        .await
+        .context("Could not get subscriber ID from token")?;
 
     match subscriber_id {
         // Token does not exist
-        None => HttpResponse::Unauthorized().finish(),
+        None => Err(ConfirmSubscriptionError::SubscriberDoesNotExist),
         Some(subscriber_id) => {
-            match check_if_subscriber_confirmed(&db, &subscriber_id).await {
-                Ok(true) => return HttpResponse::BadRequest().finish(),
-                Err(_) => return HttpResponse::InternalServerError().finish(),
-                _ => {}
+            if check_if_subscriber_confirmed(&db, &subscriber_id)
+                .await
+                .context("Could not check if subscriber was confirmed")?
+            {
+                return Err(ConfirmSubscriptionError::SubscriberAlreadyConfirmedError);
             };
 
-            if confirm_subscriber(&db, &subscriber_id).await.is_err() {
-                return HttpResponse::InternalServerError().finish();
-            }
-            HttpResponse::Ok().finish()
+            confirm_subscriber(&db, &subscriber_id)
+                .await
+                .context("Could not confirm subscriber")?;
+            Ok(HttpResponse::Ok().finish())
         }
     }
 }
@@ -65,11 +70,7 @@ pub async fn get_subscriber_id_from_token(
         token
     )
     .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    })?;
+    .await?;
 
     Ok(result.map(|r| r.subscriber_id))
 }
@@ -82,11 +83,35 @@ pub async fn confirm_subscriber(db: &PgPool, user_id: &Uuid) -> Result<(), sqlx:
         SubscriberStatus::Ok.to_string()
     )
     .execute(db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    })?;
+    .await?;
 
     Ok(())
+}
+
+#[derive(thiserror::Error)]
+pub enum ConfirmSubscriptionError {
+    #[error("Subscriber was already confirmed")]
+    SubscriberAlreadyConfirmedError,
+
+    #[error("Subscriber does not exist.")]
+    SubscriberDoesNotExist,
+
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for ConfirmSubscriptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for ConfirmSubscriptionError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::SubscriberAlreadyConfirmedError => StatusCode::BAD_REQUEST,
+            Self::SubscriberDoesNotExist => StatusCode::UNAUTHORIZED,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 }

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = { version = "4", features = ["rustls"] }
+anyhow = "1.0.79"
 chrono = { version = "0.4.31", default-features = false, features = ["clock", "serde"] }
 claims = "0.7.1"
 config = "0.13.4"
