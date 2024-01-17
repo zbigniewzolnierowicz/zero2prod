@@ -1,0 +1,105 @@
+use crate::{
+    domain::{Email, SubscriberStatus},
+    email_client::EmailClient,
+    utils::error_chain_fmt,
+};
+use actix_web::{web, HttpResponse, ResponseError};
+use anyhow::Context;
+use rayon::prelude::*;
+use reqwest::StatusCode;
+use sqlx::PgPool;
+
+#[derive(serde::Deserialize)]
+pub struct NewsletterPublishDTO {
+    title: String,
+    content: Content,
+}
+
+#[derive(serde::Deserialize)]
+pub struct Content {
+    html: String,
+    text: String,
+}
+
+#[derive(thiserror::Error)]
+pub enum PublishError {
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for PublishError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for PublishError {
+    fn status_code(&self) -> reqwest::StatusCode {
+        match self {
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+pub async fn publish_newsletter(
+    body: web::Json<NewsletterPublishDTO>,
+    pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
+) -> Result<HttpResponse, PublishError> {
+    let subscribers = get_confirmed_subscribers(&pool).await?;
+
+    for subscriber in subscribers {
+        match subscriber {
+            Ok(subscriber) => {
+                email_client
+                    .send_email(
+                        &subscriber.email,
+                        &body.title,
+                        &body.content.html,
+                        &body.content.text,
+                    )
+                    .await
+                    .with_context(|| format!("Failed to send email to {}", subscriber.email))?;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error.cause_chain = ?error,
+                    "Skipping a confirmed subscriber. \
+                    Their stored contact details are invalid",
+                )
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+struct ConfirmedSubscriber {
+    pub email: Email,
+}
+
+#[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
+pub async fn get_confirmed_subscribers(
+    pool: &PgPool,
+) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT email
+        FROM subscriptions
+        WHERE status = $1
+        "#,
+        SubscriberStatus::Ok.to_string()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let confirmed_subscribers = rows
+        .into_par_iter()
+        .map(|r| match Email::parse(r.email) {
+            Ok(email) => Ok(ConfirmedSubscriber { email }),
+            Err(error) => Err(anyhow::anyhow!(error)),
+        })
+        .collect();
+
+    Ok(confirmed_subscribers)
+}

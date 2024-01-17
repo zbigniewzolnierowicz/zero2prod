@@ -176,12 +176,7 @@ pub async fn send_confirmation_email(
     )?;
 
     email
-        .send_email(
-            new_subscriber.email.clone(),
-            "Welcome!",
-            &html_body,
-            &text_body,
-        )
+        .send_email(&new_subscriber.email, "Welcome!", &html_body, &text_body)
         .await?;
 
     Ok(())

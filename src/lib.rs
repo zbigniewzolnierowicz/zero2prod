@@ -31,6 +31,7 @@ pub fn run(
             .route("/healthz", web::get().to(routes::ping))
             .route("/subscribe", web::post().to(routes::subscribe))
             .route("/subscribe/confirm", web::get().to(routes::confirm))
+            .route("/newsletters", web::post().to(routes::publish_newsletter))
             .app_data(database.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
